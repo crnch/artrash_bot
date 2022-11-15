@@ -1,36 +1,30 @@
 import { encode } from "https://deno.land/std@0.163.0/encoding/base64.ts";
-import { config } from "https://deno.land/std@0.163.0/dotenv/mod.ts";
 import { Buffer } from "https://deno.land/std@0.163.0/io/mod.ts";
-
-import { Bot, Context } from "https://deno.land/x/grammy@v1.12.0/mod.ts";
+import { Bot, Context, InlineKeyboard, session, SessionFlavor } from "https://deno.land/x/grammy@v1.12.0/mod.ts";
 import {
   hydrateReply,
   parseMode,
 } from "https://deno.land/x/grammy_parse_mode@1.5.0/mod.ts";
 import type { ParseModeFlavor } from "https://deno.land/x/grammy_parse_mode@1.5.0/mod.ts";
 
-const envConfig = await config()
+import { Prediction, database } from "./db.ts";
+import { digestMessageToHex , getEnvVariable} from "./helpers.ts"
+import { type PredictionItem, type Map } from "./interfaces.ts"
 
-function getEnvVariable(key: string): (string | undefined) {
-  return (envConfig[key] || Deno.env.get(key))
-}
 
 const BOT_TOKEN = getEnvVariable("BOT_TOKEN")!; 
 const PREDICTOR_URL = getEnvVariable("PREDICTOR_URL")!;
 const STAGE = getEnvVariable("STAGE")! // dev | prod
 
-interface PredictionItem {
-  label: string,
-  confidence: number
-}
+type MyContext = Context & SessionFlavor<Prediction>;
 
-interface Map {
-  [key: string]: string
-}
-
-const bot = new Bot<ParseModeFlavor<Context>>(BOT_TOKEN);
-bot.use(hydrateReply);
+const bot = new Bot<ParseModeFlavor<MyContext>>(BOT_TOKEN);
+bot.use(hydrateReply).use(session());
 bot.api.config.use(parseMode("MarkdownV2"));
+
+const inlineKeyboard = new InlineKeyboard()
+  .text("Art", "user-predicts-art")
+  .text("Trash", "user-predicts-trash")
 
 bot.on('message', async (ctx) => {
   const mime_type_pattern = /image\/.+/
@@ -67,8 +61,11 @@ bot.on('message', async (ctx) => {
     data = chunk.value
   }
 
+  const imageData = buffer.bytes()
+  const hash = await digestMessageToHex(imageData)
+
   const mime_type = message.document ? message.document.mime_type : "image/jpeg"
-  const base64ImageString = encode(buffer.bytes())
+  const base64ImageString = encode(imageData)
   const predictionResponse = await fetch(
     PREDICTOR_URL,
     {
@@ -87,8 +84,8 @@ bot.on('message', async (ctx) => {
     return
   }
 
-  const prediction = predictionResult.data[0];
-  const confidences: PredictionItem[] = prediction.confidences;
+  const modelPrediction = predictionResult.data[0];
+  const confidences: PredictionItem[] = modelPrediction.confidences;
   if (!confidences) {
     return
   }
@@ -100,14 +97,28 @@ bot.on('message', async (ctx) => {
   const listItems = confidences.map(
     (item: PredictionItem) => `${labelToEmoji[item.label]} ${(item.confidence * 100).toFixed(2)} %`,
   )
-  let responseMessage = `This is **${prediction.label}**\n`
+  let responseMessage = `This is **${modelPrediction.label}**\n`
   responseMessage += '\nConfidences:\n'
   responseMessage += listItems.join('\n')
   responseMessage = responseMessage.replaceAll(/\./g, "\\.")
 
   await ctx.reply(responseMessage)
+  
+  const userPrediction: Prediction = {     
+    chat_id: ctx.message.chat.id,
+    user_id: ctx.message.from.id,
+    msg_id: ctx.message.message_id,
+    file_id: fileId,
+    sha256: hash,
+  }
+  ctx.session = userPrediction
+
+  await ctx.reply("What do you think this is?", {reply_markup: inlineKeyboard})
 })
 
+bot.callbackQuery("user-predicts-art", async (ctx) => {
+  await ctx.answerCallbackQuery()
+}) 
 
 if (STAGE === "dev") {
   bot.start();
