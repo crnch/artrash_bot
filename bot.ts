@@ -16,9 +16,17 @@ const BOT_TOKEN = getEnvVariable("BOT_TOKEN")!;
 const PREDICTOR_URL = getEnvVariable("PREDICTOR_URL")!;
 const STAGE = getEnvVariable("STAGE")! // dev | prod
 
-type MyContext = Context & SessionFlavor<Prediction>;
+interface SessionData {
+  inlineKeyboardMsg: {
+    msgId: number,
+    chatId: number
+  },
+  userPrediction: Prediction
+}
 
-const bot = new Bot<ParseModeFlavor<MyContext>>(BOT_TOKEN);
+type CustomContext = Context & SessionFlavor<SessionData>;
+
+const bot = new Bot<ParseModeFlavor<CustomContext>>(BOT_TOKEN);
 bot.use(hydrateReply).use(session());
 bot.api.config.use(parseMode("MarkdownV2"));
 
@@ -43,22 +51,10 @@ bot.on('message', async (ctx) => {
   }
 
   const fileId = message.document ? message.document.file_id : message.photo![2].file_id;
-  const file = await ctx.api.getFile(fileId);
-  const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
-
-  const fileResponse = await fetch(fileUrl)
-  if (!fileResponse.body) {
+  const buffer = await getFileFromTelegram(ctx, fileId);
+  if (!buffer) {
+    await ctx.reply("Could not retrieve data from Telegram")
     return
-  }
-
-  const reader = fileResponse.body.getReader()
-  const buffer = new Buffer()
-  let chunk = await reader.read()
-  let data = chunk.value
-  while (data) {
-    buffer.write(data)
-    chunk = await reader.read()
-    data = chunk.value
   }
 
   const imageData = buffer.bytes()
@@ -66,7 +62,7 @@ bot.on('message', async (ctx) => {
 
   const mime_type = message.document ? message.document.mime_type : "image/jpeg"
   const base64ImageString = encode(imageData)
-  const predictionResponse = await fetch(
+  const modelPredictionResponse = await fetch(
     PREDICTOR_URL,
     {
       method: 'POST',
@@ -78,13 +74,13 @@ bot.on('message', async (ctx) => {
       headers: { 'Content-Type': 'application/json' },
     },
   )
-  const predictionResult = await predictionResponse.json()
-  if ("error" in predictionResult) {
+  const modelPredictionResult = await modelPredictionResponse.json()
+  if ("error" in modelPredictionResult) {
     await ctx.reply("Could not read data")
     return
   }
 
-  const modelPrediction = predictionResult.data[0];
+  const modelPrediction = modelPredictionResult.data[0];
   const confidences: PredictionItem[] = modelPrediction?.confidences;
   if (!confidences) {
     return
@@ -111,26 +107,60 @@ bot.on('message', async (ctx) => {
     file_id: fileId,
     sha256: hash,
   }
-  ctx.session = userPrediction
 
-  await ctx.reply("What do you think this is?", {reply_markup: inlineKeyboard})
+  const botReplyMsg = await ctx.reply("What do you think this is?", {reply_markup: inlineKeyboard})
+  ctx.session = { 
+    userPrediction,
+    inlineKeyboardMsg: {
+      chatId: botReplyMsg.chat.id,
+      msgId: botReplyMsg.message_id
+    }
+  }
 })
 
 bot.callbackQuery("user-predicts-art", async (ctx) => {
-  const userPrediction = ctx.session
-  userPrediction.is_art = true
-  await database.insert(userPrediction);
-  await ctx.answerCallbackQuery("Your prediction has been inserted in the database")
+  await answerCallback(true, ctx);
 }) 
 
 bot.callbackQuery("user-predicts-trash", async (ctx) => {
-  const userPrediction = ctx.session
-  userPrediction.is_art = false
+  await answerCallback(false, ctx);
+}) 
+
+async function answerCallback(isArt: boolean, ctx: CustomContext) {
+  const userPrediction = ctx.session.userPrediction
+  userPrediction.is_art = isArt
   const success = await database.insert(userPrediction);
   const msg = success ? "Your prediction has been inserted in the database" : "Error: failed inserting new record into db"
   await ctx.answerCallbackQuery(msg)
-}) 
 
+  if (success) {
+    const {chatId, msgId} = ctx.session.inlineKeyboardMsg 
+    await bot.api.deleteMessage(chatId, msgId)
+  } 
+    
+}
+
+async function getFileFromTelegram(ctx: Context, fileId: string): Promise<Buffer | undefined> {
+  const fileData = await ctx.api.getFile(fileId);
+  const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileData.file_path}`;
+
+  const fileResponse = await fetch(fileUrl)
+  if (!fileResponse.body) {
+    return
+  }
+
+  const reader = fileResponse.body.getReader()
+  const buffer = new Buffer()
+  let chunk = await reader.read()
+  let data = chunk.value
+  while (data) {
+    buffer.write(data)
+    chunk = await reader.read()
+    data = chunk.value
+  }
+
+  return buffer
+}
 
 if (STAGE === "dev") {
   bot.start();
