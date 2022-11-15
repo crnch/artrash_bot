@@ -75,5 +75,5 @@ bot.on('message', async (ctx) => {
   await ctx.replyWithMarkdown(responseMessage)
 })
 
-export const predictor = http(bot.webhookCallback("/telegraf"));
+module.exports.predictor = http(bot.webhookCallback("/telegraf"));
 //bot.launch()
