@@ -1,5 +1,5 @@
 import { Bot } from "https://deno.land/x/grammy@v1.12.0/mod.ts";
-import * as base64 from "https://denopkg.com/chiefbiiko/base64@master/mod.ts";
+import { encode } from "https://deno.land/std@0.163.0/encoding/base64.ts";
 import { config } from "https://deno.land/std@0.163.0/dotenv/mod.ts";
 import { Buffer } from "https://deno.land/std@0.163.0/io/mod.ts";
 
@@ -60,7 +60,7 @@ bot.on('message', async (ctx) => {
   }
 
   const mime_type = message.document ? message.document.mime_type : "image/jpeg"
-  const base64ImageString = base64.fromUint8Array(buffer.bytes())
+  const base64ImageString = encode(buffer.bytes())
   const predictionResponse = await fetch(
     PREDICTOR_URL,
     {
@@ -104,3 +104,5 @@ bot.on('message', async (ctx) => {
 if (STAGE === "dev") {
   bot.start();
 }
+
+export default bot
