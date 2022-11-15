@@ -85,7 +85,7 @@ bot.on('message', async (ctx) => {
   }
 
   const modelPrediction = predictionResult.data[0];
-  const confidences: PredictionItem[] = modelPrediction.confidences;
+  const confidences: PredictionItem[] = modelPrediction?.confidences;
   if (!confidences) {
     return
   }
@@ -117,8 +117,20 @@ bot.on('message', async (ctx) => {
 })
 
 bot.callbackQuery("user-predicts-art", async (ctx) => {
-  await ctx.answerCallbackQuery()
+  const userPrediction = ctx.session
+  userPrediction.is_art = true
+  await database.insert(userPrediction);
+  await ctx.answerCallbackQuery("Your prediction has been inserted in the database")
 }) 
+
+bot.callbackQuery("user-predicts-trash", async (ctx) => {
+  const userPrediction = ctx.session
+  userPrediction.is_art = false
+  const success = await database.insert(userPrediction);
+  const msg = success ? "Your prediction has been inserted in the database" : "Error: failed inserting new record into db"
+  await ctx.answerCallbackQuery(msg)
+}) 
+
 
 if (STAGE === "dev") {
   bot.start();
