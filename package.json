@@ -1,0 +1,17 @@
+{
+  "name": "artrash_bot",
+  "version": "1.0.0",
+  "description": "Telegram Bot that has a fine taste for art",
+  "main": "bot.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "type": "module",
+  "author": "Marten Schlüter",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.0.2",
+    "node-fetch": "^3.2.10",
+    "telegraf": "^4.9.2"
+  }
+}
