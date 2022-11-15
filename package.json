@@ -4,7 +4,11 @@
   "description": "Telegram Bot that has a fine taste for art",
   "main": "bot.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "serverless": "serverless",
+    "release": "serverless deploy",
+    "purge": "serverless remove",
+    "set-webhook": "telegraf -m setWebhook"
   },
   "type": "module",
   "author": "Marten Schlüter",
@@ -12,6 +16,8 @@
   "dependencies": {
     "dotenv": "^16.0.2",
     "node-fetch": "^3.2.10",
+    "serverless-dotenv-plugin": "^4.0.2",
+    "serverless-http": "^3.0.2",
     "telegraf": "^4.9.2"
   }
 }

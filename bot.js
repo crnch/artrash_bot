@@ -1,10 +1,8 @@
 import { Buffer } from 'node:buffer'
 
-import * as dotenv from 'dotenv' // see https://github.com/motdotla/dotenv#how-do-i-use-dotenv-with-import
+import http from "serverless-http";
 import { Telegraf, Telegram } from 'telegraf'
 import fetch from 'node-fetch'
-
-dotenv.config()
 
 const bot = new Telegraf(process.env.BOT_TOKEN)
 const api = new Telegram(process.env.BOT_TOKEN)
@@ -17,6 +15,7 @@ bot.command('quit', async (ctx) => {
 bot.on('message', async (ctx) => {
   const mime_type_pattern = /image\/.+/
   const message = ctx.update.message;
+  // only process photos or messages containing images
   if (
     !(
       message.photo ||
@@ -35,15 +34,14 @@ bot.on('message', async (ctx) => {
   const chunks = []
   const stream = fileResponse.body
   // 'stream' may be triggered multiple times as data is buffered in
-
-  for await (const chunk of stream.iterator({ destroyOnReturn: false })) {
-    chunks.push(chunk) //
+  for await (const chunk of stream.iterator()) {
+    chunks.push(chunk)
   }
   const buf = Buffer.concat(chunks)
 
   const mime_type = message.document ? message.document.mime_type : "image/jpeg"
   const predictionResponse = await fetch(
-    'https://hf.space/embed/msc/artrash/+/api/predict',
+    process.env.PREDICTOR_URL,
     {
       method: 'POST',
       body: JSON.stringify({
@@ -73,8 +71,4 @@ bot.on('message', async (ctx) => {
   await ctx.replyWithMarkdown(responseMessage)
 })
 
-bot.launch()
-
-// Enable graceful stop
-process.once('SIGINT', () => bot.stop('SIGINT'))
-process.once('SIGTERM', () => bot.stop('SIGTERM'))
+export const predictor = http(bot.webhookCallback("/telegraf"));
