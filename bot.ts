@@ -1,5 +1,5 @@
 import { Bot } from "https://deno.land/x/grammy@v1.12.0/mod.ts";
-import * as base64 from "https://denopkg.com/chiefbiiko/base64/mod.ts";
+import * as base64 from "https://denopkg.com/chiefbiiko/base64@master/mod.ts";
 import { config } from "https://deno.land/std@0.163.0/dotenv/mod.ts";
 import { Buffer } from "https://deno.land/std@0.163.0/io/mod.ts";
 
