@@ -140,6 +140,13 @@ async function answerCallback(isArt: boolean, ctx: CustomContext) {
     
 }
 
+/* TODOs
+ - outsource this method to helpers?
+ - implement compression/archive generation of all images in db
+ - upload to telegram for user who requested dump
+ - https://github.com/deno-library/compress
+ - https://deno.land/std@0.164.0/archive/tar.ts
+*/
 async function getFileFromTelegram(ctx: Context, fileId: string): Promise<Buffer | undefined> {
   const fileData = await ctx.api.getFile(fileId);
   const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileData.file_path}`;
