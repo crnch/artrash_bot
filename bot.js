@@ -1,11 +1,15 @@
-import { Buffer } from 'node:buffer'
+const { Buffer } = require('node:buffer');
 
-import http from "serverless-http";
-import { Telegraf, Telegram } from 'telegraf'
-import fetch from 'node-fetch'
+const http =  require("serverless-http");
+const { Telegraf, Telegram } = require('telegraf');
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+const dotenv = require('dotenv');
+dotenv.config()
 
-const bot = new Telegraf(process.env.BOT_TOKEN)
-const api = new Telegram(process.env.BOT_TOKEN)
+const {BOT_TOKEN, PREDICTOR_URL} = process.env
+
+const bot = new Telegraf(BOT_TOKEN)
+const api = new Telegram(BOT_TOKEN)
 
 bot.command('quit', async (ctx) => {
   // Using context shortcut
@@ -28,7 +32,7 @@ bot.on('message', async (ctx) => {
 
   const fileId = message.document ? message.document.file_id : message.photo[2].file_id
   const file = await api.getFile(fileId)
-  const fileUrl = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${file.file_path}`
+  const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`
 
   const fileResponse = await fetch(fileUrl)
   const chunks = []
@@ -41,7 +45,7 @@ bot.on('message', async (ctx) => {
 
   const mime_type = message.document ? message.document.mime_type : "image/jpeg"
   const predictionResponse = await fetch(
-    process.env.PREDICTOR_URL,
+    PREDICTOR_URL,
     {
       method: 'POST',
       body: JSON.stringify({
@@ -72,3 +76,4 @@ bot.on('message', async (ctx) => {
 })
 
 export const predictor = http(bot.webhookCallback("/telegraf"));
+//bot.launch()

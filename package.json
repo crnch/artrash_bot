@@ -10,14 +10,16 @@
     "purge": "serverless remove",
     "set-webhook": "telegraf -m setWebhook"
   },
-  "type": "module",
+  "type": "commonjs",
   "author": "Marten Schlüter",
   "license": "MIT",
   "dependencies": {
     "dotenv": "^16.0.3",
     "node-fetch": "^3.2.10",
-    "serverless-dotenv-plugin": "^4.0.2",
     "serverless-http": "^3.0.2",
     "telegraf": "^4.9.2"
+  },
+  "devDependencies": {
+    "serverless-dotenv-plugin": "^4.0.2"
   }
 }
