@@ -1,7 +1,13 @@
-import { Bot } from "https://deno.land/x/grammy@v1.12.0/mod.ts";
 import { encode } from "https://deno.land/std@0.163.0/encoding/base64.ts";
 import { config } from "https://deno.land/std@0.163.0/dotenv/mod.ts";
 import { Buffer } from "https://deno.land/std@0.163.0/io/mod.ts";
+
+import { Bot, Context } from "https://deno.land/x/grammy@v1.12.0/mod.ts";
+import {
+  hydrateReply,
+  parseMode,
+} from "https://deno.land/x/grammy_parse_mode@1.5.0/mod.ts";
+import type { ParseModeFlavor } from "https://deno.land/x/grammy_parse_mode@1.5.0/mod.ts";
 
 const envConfig = await config()
 
@@ -22,7 +28,9 @@ interface Map {
   [key: string]: string
 }
 
-const bot = new Bot(BOT_TOKEN)
+const bot = new Bot<ParseModeFlavor<Context>>(BOT_TOKEN);
+bot.use(hydrateReply);
+bot.api.config.use(parseMode("MarkdownV2"));
 
 bot.on('message', async (ctx) => {
   const mime_type_pattern = /image\/.+/
@@ -97,7 +105,7 @@ bot.on('message', async (ctx) => {
   responseMessage += listItems.join('\n')
   responseMessage = responseMessage.replaceAll(/\./g, "\\.")
 
-  await ctx.reply(responseMessage, { parse_mode: "MarkdownV2" })
+  await ctx.reply(responseMessage)
 })
 
 
