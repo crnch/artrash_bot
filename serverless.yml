@@ -13,8 +13,6 @@ plugins:
 provider: 
   name: aws
   runtime: nodejs16.x
-  httpApi:
-    cors: true
 
 functions:
   predict:
@@ -23,4 +21,3 @@ functions:
       - httpApi:
           path: /telegraf
           method: post
-

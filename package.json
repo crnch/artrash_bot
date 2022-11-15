@@ -14,7 +14,7 @@
   "author": "Marten Schlüter",
   "license": "MIT",
   "dependencies": {
-    "dotenv": "^16.0.2",
+    "dotenv": "^16.0.3",
     "node-fetch": "^3.2.10",
     "serverless-dotenv-plugin": "^4.0.2",
     "serverless-http": "^3.0.2",
