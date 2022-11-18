@@ -1,6 +1,10 @@
-import { encode } from "https://deno.land/std@0.163.0/encoding/base64.ts";
-import { Buffer } from "https://deno.land/std@0.163.0/io/mod.ts";
-import { Bot, Context, InlineKeyboard, session, SessionFlavor } from "https://deno.land/x/grammy@v1.12.0/mod.ts";
+import { encode } from "https://deno.land/std@0.164.0/encoding/base64.ts";
+import { Buffer } from "https://deno.land/std@0.164.0/io/mod.ts";
+import { Tar } from "https://deno.land/std@0.165.0/archive/tar.ts";
+import { gzip } from "https://deno.land/x/compress@v0.4.5/mod.ts";
+import { copy } from "https://deno.land/std@0.164.0/streams/conversion.ts";
+
+import { Bot, Context, InlineKeyboard, session, SessionFlavor, InputFile } from "https://deno.land/x/grammy@v1.12.0/mod.ts";
 import {
   hydrateReply,
   parseMode,
@@ -33,6 +37,33 @@ bot.api.config.use(parseMode("MarkdownV2"));
 const inlineKeyboard = new InlineKeyboard()
   .text("Art", "user-predicts-art")
   .text("Trash", "user-predicts-trash")
+
+bot.command('dump', async (ctx) => {
+  const predictions = await database.list();
+  const tar = new Tar();
+  const tarPromises: Promise<Buffer | undefined>[] = [];
+  predictions.forEach( prediction => {
+    const directory = prediction.is_art ? 'art' : 'trash'
+    const promise = getFileFromTelegram(ctx, prediction.file_id)
+    promise.then(async buffer => {
+      await tar.append(`${directory}/${prediction.sha256}.jpg`, {
+        reader: buffer,
+        contentSize: buffer?.length
+      })
+    })
+    tarPromises.push(promise)
+  })
+
+  Promise.all(tarPromises).then(async _ => {
+    const reader = tar.getReader()
+    const buffer = new Buffer()
+    await copy(reader, buffer)
+    const gzipData = gzip(buffer.bytes())
+    const hash = await digestMessageToHex(gzipData)
+    ctx.replyWithDocument(new InputFile(gzipData, `${hash}.tar.gz`))
+  })
+
+})
 
 bot.on('message', async (ctx) => {
   const mime_type_pattern = /image\/.+/
@@ -140,13 +171,6 @@ async function answerCallback(isArt: boolean, ctx: CustomContext) {
     
 }
 
-/* TODOs
- - outsource this method to helpers?
- - implement compression/archive generation of all images in db
- - upload to telegram for user who requested dump
- - https://github.com/deno-library/compress
- - https://deno.land/std@0.164.0/archive/tar.ts
-*/
 async function getFileFromTelegram(ctx: Context, fileId: string): Promise<Buffer | undefined> {
   const fileData = await ctx.api.getFile(fileId);
   const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileData.file_path}`;
