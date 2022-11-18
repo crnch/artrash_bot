@@ -42,6 +42,19 @@ class PredictionsDatabase {
         const success = error ? false : true
         return success
     }
+
+    async exists(hash: string): Promise<Prediction | undefined> {
+        const {data, error} = await this.db.from("predictions").select("*").eq("sha256", hash) 
+        if (error) {
+            return
+        } 
+
+        if (data.length < 1) {
+            return
+        } else {
+            return data[0]
+        }
+    }
 }
 
 export const database = new PredictionsDatabase(supabase)

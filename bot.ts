@@ -129,7 +129,19 @@ bot.on('message', async (ctx) => {
   responseMessage += listItems.join('\n')
   responseMessage = responseMessage.replaceAll(/\./g, "\\.")
 
+  const promise = database.exists(hash)
+  
   await ctx.reply(responseMessage)
+
+  const existingUserPrediction = await promise
+  if (existingUserPrediction) {
+    // TODO display message
+    // "you classified this picture as art/trash"
+    // "did you change your mind"
+    // "yes" "no"
+  }
+
+
   
   const userPrediction: Prediction = {     
     chat_id: ctx.message.chat.id,
