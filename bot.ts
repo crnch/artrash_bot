@@ -14,6 +14,7 @@ import type { ParseModeFlavor } from "https://deno.land/x/grammy_parse_mode@1.5.
 import { Prediction, database } from "./db.ts";
 import { digestMessageToHex , getEnvVariable} from "./helpers.ts"
 import { type PredictionItem, type Map } from "./interfaces.ts"
+import { Message } from "https://deno.land/x/grammy@v1.12.0/types.deno.ts";
 
 
 const BOT_TOKEN = getEnvVariable("BOT_TOKEN")!; 
@@ -34,12 +35,20 @@ const bot = new Bot<ParseModeFlavor<CustomContext>>(BOT_TOKEN);
 bot.use(hydrateReply).use(session());
 bot.api.config.use(parseMode("MarkdownV2"));
 
-const inlineKeyboard = new InlineKeyboard()
+const artOrTrashInlineKeyboard = new InlineKeyboard()
   .text("Art", "user-predicts-art")
   .text("Trash", "user-predicts-trash")
 
+const yesOrNoInlineKeyboard = new InlineKeyboard()
+  .text("Yes", "user-mind-change")
+  .text("No", "user-no-mind-change")
+
 bot.command('dump', async (ctx) => {
-  const predictions = await database.list();
+  const predictionsPromise = database.list();
+  if (ctx.message) {
+    await ctx.api.sendChatAction(ctx.message.chat.id, "upload_document")
+  }
+  const predictions = await predictionsPromise;
   const tar = new Tar();
   const tarPromises: Promise<Buffer | undefined>[] = [];
   predictions.forEach( prediction => {
@@ -81,7 +90,9 @@ bot.on('message', async (ctx) => {
     return
   }
 
-  const fileId = message.document ? message.document.file_id : message.photo![2].file_id;
+  await ctx.api.sendChatAction(ctx.message.chat.id, "typing") 
+
+  const fileId = message.document ? message.document.file_id : message.photo![1].file_id;
   const buffer = await getFileFromTelegram(ctx, fileId);
   if (!buffer) {
     await ctx.reply("Could not retrieve data from Telegram")
@@ -93,6 +104,10 @@ bot.on('message', async (ctx) => {
 
   const mime_type = message.document ? message.document.mime_type : "image/jpeg"
   const base64ImageString = encode(imageData)
+  /* The gradio predicion fails with `request entity too large` for _some_ images
+  The iamges I download from telegram are small, checked the size
+  What's the pattern?
+  */
   const modelPredictionResponse = await fetch(
     PREDICTOR_URL,
     {
@@ -106,8 +121,8 @@ bot.on('message', async (ctx) => {
     },
   )
   const modelPredictionResult = await modelPredictionResponse.json()
-  if ("error" in modelPredictionResult) {
-    await ctx.reply("Could not read data")
+  if (modelPredictionResult.error) {
+    await ctx.reply(`Error retrieving prediction result: ${modelPredictionResult.error}`)
     return
   }
 
@@ -129,29 +144,32 @@ bot.on('message', async (ctx) => {
   responseMessage += listItems.join('\n')
   responseMessage = responseMessage.replaceAll(/\./g, "\\.")
 
-  const promise = database.exists(hash)
+  const promise = database.exists(ctx.message.from.id, hash)
   
   await ctx.reply(responseMessage)
 
+  let userPrediction: Prediction
+  let botReplyMsg: Message.TextMessage
   const existingUserPrediction = await promise
   if (existingUserPrediction) {
-    // TODO display message
-    // "you classified this picture as art/trash"
-    // "did you change your mind"
-    // "yes" "no"
+    userPrediction = existingUserPrediction
+    const userClassificationEmoji = userPrediction.is_art ? "🎨" : "🚮"
+    let msg = 'You already told me what you think this is. '
+    msg += `Last time, you said it's ${userClassificationEmoji}. `
+    msg += `Did you change your mind?`
+    msg = msg.replaceAll(/\./g, "\\.")
+    botReplyMsg = await ctx.reply(msg, {reply_markup: yesOrNoInlineKeyboard})
+  } else {
+    userPrediction = {     
+      chat_id: ctx.message.chat.id,
+      user_id: ctx.message.from.id,
+      msg_id: ctx.message.message_id,
+      file_id: fileId,
+      sha256: hash,
+    }
+    botReplyMsg = await ctx.reply("What do you think this is?", {reply_markup: artOrTrashInlineKeyboard})
   }
 
-
-  
-  const userPrediction: Prediction = {     
-    chat_id: ctx.message.chat.id,
-    user_id: ctx.message.from.id,
-    msg_id: ctx.message.message_id,
-    file_id: fileId,
-    sha256: hash,
-  }
-
-  const botReplyMsg = await ctx.reply("What do you think this is?", {reply_markup: inlineKeyboard})
   ctx.session = { 
     userPrediction,
     inlineKeyboardMsg: {
@@ -169,17 +187,39 @@ bot.callbackQuery("user-predicts-trash", async (ctx) => {
   await answerCallback(false, ctx);
 }) 
 
+bot.callbackQuery("user-mind-change", async (ctx) => {
+  const isArt = !ctx.session.userPrediction.is_art
+  await answerCallback(isArt, ctx);
+}) 
+
+bot.callbackQuery("user-no-mind-change", async (ctx) => {
+  const { inlineKeyboardMsg } = ctx.session
+  const {chatId, msgId} = inlineKeyboardMsg 
+  await bot.api.deleteMessage(chatId, msgId)
+  await ctx.answerCallbackQuery("Didn't change anything - it's ok to (not) change your mind")
+}) 
+
 async function answerCallback(isArt: boolean, ctx: CustomContext) {
-  const userPrediction = ctx.session.userPrediction
-  userPrediction.is_art = isArt
-  const success = await database.insert(userPrediction);
-  const msg = success ? "Your prediction has been inserted in the database" : "Error: failed inserting new record into db"
+  let success: boolean
+  let msg: string
+  const { userPrediction, inlineKeyboardMsg } = ctx.session
+  if (!userPrediction.id) {
+    const userPrediction = ctx.session.userPrediction
+    userPrediction.is_art = isArt
+    success = await database.insert(userPrediction);
+    msg = success ? "Your prediction has been inserted in the database" : "Error: failed inserting new record into db"
+  } else {
+    // UNIQUE in supabase seems to be only possible on the row level (not multiple rows combined)
+    // so instead of an upsert, we do an (independent) update
+    success = await database.update(userPrediction.id, isArt)
+    msg = success ? "Your classification has been updated" : "Error: failed updating record in db"
+  }
   await ctx.answerCallbackQuery(msg)
 
   if (success) {
-    const {chatId, msgId} = ctx.session.inlineKeyboardMsg 
+    const {chatId, msgId} = inlineKeyboardMsg 
     await bot.api.deleteMessage(chatId, msgId)
-  } 
+  }
     
 }
 
@@ -192,14 +232,12 @@ async function getFileFromTelegram(ctx: Context, fileId: string): Promise<Buffer
     return
   }
 
-  const reader = fileResponse.body.getReader()
+  const telegramFileResponseReader = fileResponse.body.getReader()
   const buffer = new Buffer()
-  let chunk = await reader.read()
-  let data = chunk.value
-  while (data) {
-    buffer.write(data)
-    chunk = await reader.read()
-    data = chunk.value
+  let chunk = await telegramFileResponseReader.read()
+  while (chunk.value) {
+    buffer.write(chunk.value)
+    chunk = await telegramFileResponseReader.read()
   }
 
   return buffer
